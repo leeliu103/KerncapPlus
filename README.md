@@ -43,7 +43,8 @@ pip install -e ./kerncap
 Then install KerncapPlus:
 
 ```bash
-cd /app/KerncapPlus
+git clone https://github.com/leeliu103/KerncapPlus.git
+cd KerncapPlus
 pip install -e .
 ```
 

@@ -18,8 +18,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/AMDResearch/intellikit/tree/main/kerncap_plus"
-Repository = "https://github.com/AMDResearch/intellikit/tree/main/kerncap_plus"
+Homepage = "https://github.com/leeliu103/KerncapPlus"
+Repository = "https://github.com/leeliu103/KerncapPlus"
 
 [project.scripts]
 kerncap-plus = "kerncap_plus.cli:main"
