@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shlex
 import subprocess
@@ -13,6 +14,7 @@ from importlib import resources
 
 
 MAKEFILE_NAME = "Makefile.asm"
+RECOMPILE_DRIVER_RE = re.compile(r"(?:^|\s)(?:hipcc|(?:\S*/)?clang(?:\+\+)?)(?=\s)", re.MULTILINE)
 
 
 class KerncapPlusError(RuntimeError):
@@ -92,8 +94,9 @@ def verify_source_backed_workspace(workspace: Path) -> None:
         cwd=workspace,
         capture_output=True,
         text=True,
+        env={**os.environ, "PWD": str(workspace)},
     )
-    if proc.returncode != 0 or not any(tool in proc.stdout for tool in ("clang++", "hipcc")):
+    if proc.returncode != 0 or RECOMPILE_DRIVER_RE.search(proc.stdout) is None:
         detail = proc.stderr.strip() or proc.stdout.strip() or "recompile target unavailable"
         raise KerncapPlusError(
             "Workspace does not have a working source-backed recompile path.\n"
@@ -107,7 +110,13 @@ def run_make_target(workspace: Path, target: str, extra_vars: dict[str, str] | N
     for key, value in (extra_vars or {}).items():
         cmd.append(f"{key}={value}")
 
-    proc = subprocess.run(cmd, cwd=workspace, capture_output=True, text=True)
+    proc = subprocess.run(
+        cmd,
+        cwd=workspace,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "PWD": str(workspace)},
+    )
     if proc.returncode != 0:
         detail = (proc.stdout + proc.stderr).strip()
         raise KerncapPlusError(
