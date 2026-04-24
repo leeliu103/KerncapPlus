@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -100,8 +101,12 @@ def capture_kernel(kernel: str, cmd: str, source_dir: Path, workspace: Path | No
         click.echo(f"workspace: {target_workspace}")
         _run_capture(kernel, cmd, source_dir, target_workspace, dispatch)
     except KerncapPlusError as exc:
+        if target_workspace.exists():
+            shutil.rmtree(target_workspace, ignore_errors=True)
         raise click.ClickException(str(exc)) from exc
     except Exception as exc:  # pragma: no cover - thin CLI wrapper
+        if target_workspace.exists():
+            shutil.rmtree(target_workspace, ignore_errors=True)
         raise click.ClickException(str(exc)) from exc
 
     click.echo("READY")
