@@ -22,37 +22,6 @@ from kerncap_plus.core import (
 )
 
 
-def _format_profile_rows(kernels: list) -> list[str]:
-    rows = []
-    for idx, kernel in enumerate(kernels, start=1):
-        avg_us = kernel.avg_duration_ns / 1000.0
-        total_ms = kernel.total_duration_ns / 1e6
-        rows.append(
-            (
-                str(idx),
-                str(kernel.calls),
-                f"{avg_us:.2f}",
-                f"{total_ms:.2f}",
-                f"{kernel.percentage:.2f}",
-                kernel.name,
-            )
-        )
-
-    headers = ("#", "calls", "avg_us", "total_ms", "pct", "kernel")
-    widths = [
-        max(len(headers[i]), *(len(row[i]) for row in rows)) if rows else len(headers[i])
-        for i in range(len(headers))
-    ]
-
-    lines = [
-        "  ".join(headers[i].ljust(widths[i]) for i in range(len(headers))),
-        "  ".join("-" * widths[i] for i in range(len(headers))),
-    ]
-    for row in rows:
-        lines.append("  ".join(row[i].ljust(widths[i]) for i in range(len(headers))))
-    return lines
-
-
 def _run_capture(kernel: str, cmd: str, source_dir: Path, workspace: Path, dispatch: int) -> None:
     kc = Kerncap()
     kc.extract(
@@ -85,21 +54,20 @@ def main() -> None:
 @main.command("list")
 @click.option("--cmd", required=True, help="Application command to profile.")
 def list_kernels(cmd: str) -> None:
-    """Profile a workload and list kernels ranked by time."""
+    """Run kerncap profile and preserve its original CLI output."""
     try:
-        kernels = Kerncap().profile(parse_cmd(cmd))
+        argv = parse_cmd(cmd)
+        proc = subprocess.run(
+            ["kerncap", "profile", "--", *argv],
+            check=False,
+        )
     except KerncapPlusError as exc:
         raise click.ClickException(str(exc)) from exc
-    except Exception as exc:  # pragma: no cover - thin CLI wrapper
-        raise click.ClickException(str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise click.ClickException("`kerncap` executable not found in PATH") from exc
 
-    if not kernels:
-        click.echo("No kernels found.")
-        return
-
-    click.echo(f"Found {len(kernels)} kernels")
-    for line in _format_profile_rows(kernels):
-        click.echo(line)
+    if proc.returncode != 0:
+        raise SystemExit(proc.returncode)
 
 
 @main.command("capture")
