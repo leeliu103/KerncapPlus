@@ -93,7 +93,7 @@ def verify_source_backed_workspace(workspace: Path) -> None:
         capture_output=True,
         text=True,
     )
-    if proc.returncode != 0 or "clang++" not in proc.stdout:
+    if proc.returncode != 0 or not any(tool in proc.stdout for tool in ("clang++", "hipcc")):
         detail = proc.stderr.strip() or proc.stdout.strip() or "recompile target unavailable"
         raise KerncapPlusError(
             "Workspace does not have a working source-backed recompile path.\n"

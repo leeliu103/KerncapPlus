@@ -22,7 +22,7 @@ include $(BASE_MAKEFILE)
 # Reuse the kerncap-generated HIP compile line so this file stays portable
 # across extracted folders. We only swap the final output mode/file.
 define RECOMPILE_CMD
-$$( $(MAKE) -s -f $(BASE_MAKEFILE) -n recompile | awk 'BEGIN{p=0} /clang\+\+/{p=1} p{printf "%s ", $$0} END{print ""}' | sed 's/[[:space:]]*\\[[:space:]]*/ /g' )
+$$( $(MAKE) -s -f $(BASE_MAKEFILE) -n recompile | awk 'BEGIN{p=0} /clang\+\+|hipcc/{p=1} p{printf "%s ", $$0} END{print ""}' | sed 's/[[:space:]]*\\[[:space:]]*/ /g' )
 endef
 
 export-asm: $(REFERENCE_ASM) $(REFERENCE_LL) $(PASS_LOG)
