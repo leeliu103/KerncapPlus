@@ -1,0 +1,34 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Advanced Micro Devices, Inc. All rights reserved.
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kerncap-plus"
+version = "0.1.0"
+description = "User-facing facade for source-backed kerncap ASM workflows"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+dependencies = [
+    "click>=8.0",
+    "kerncap",
+]
+
+[project.urls]
+Homepage = "https://github.com/AMDResearch/intellikit/tree/main/kerncap_plus"
+Repository = "https://github.com/AMDResearch/intellikit/tree/main/kerncap_plus"
+
+[project.scripts]
+kerncap-plus = "kerncap_plus.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"kerncap_plus" = ["templates/Makefile.asm"]
