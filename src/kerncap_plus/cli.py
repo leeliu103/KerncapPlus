@@ -21,6 +21,7 @@ from kerncap_plus.core import (
     variant_hsaco_path,
     verify_source_backed_workspace,
 )
+from kerncap_plus.asm_artifacts import WorkspaceExportError, export_workspace
 
 
 def _run_capture(kernel: str, cmd: str, source_dir: Path, workspace: Path, dispatch: int) -> None:
@@ -35,7 +36,7 @@ def _run_capture(kernel: str, cmd: str, source_dir: Path, workspace: Path, dispa
     )
     verify_source_backed_workspace(workspace)
     install_makefile_asm(workspace, overwrite=True)
-    run_make_target(workspace, "export-asm")
+    export_workspace(workspace)
 
 
 def _assemble_workspace(workspace: Path) -> Path:
@@ -100,7 +101,7 @@ def capture_kernel(kernel: str, cmd: str, source_dir: Path, workspace: Path | No
         ensure_new_workspace(target_workspace)
         click.echo(f"workspace: {target_workspace}")
         _run_capture(kernel, cmd, source_dir, target_workspace, dispatch)
-    except KerncapPlusError as exc:
+    except (KerncapPlusError, WorkspaceExportError) as exc:
         if target_workspace.exists():
             shutil.rmtree(target_workspace, ignore_errors=True)
         raise click.ClickException(str(exc)) from exc
@@ -112,6 +113,8 @@ def capture_kernel(kernel: str, cmd: str, source_dir: Path, workspace: Path | No
     click.echo("READY")
     click.echo(f"workspace: {target_workspace}")
     click.echo(f"edit: {target_workspace / 'variant' / 'variant.s'}")
+    click.echo(f"module: {target_workspace / 'reference' / 'module.s'}")
+    click.echo(f"merged: {target_workspace / 'variant' / 'merged_module.s'}")
     click.echo(f"reference: {target_workspace / 'reference' / 'kernel.s'}")
     click.echo(f"ir: {target_workspace / 'reference' / 'kernel.ll'}")
     click.echo(f"passes: {target_workspace / 'debug' / 'llvm-passes.log'}")
@@ -124,11 +127,11 @@ def capture_kernel(kernel: str, cmd: str, source_dir: Path, workspace: Path | No
 @main.command("assemble")
 @click.argument("workspace", type=click.Path(exists=True, file_okay=False, path_type=Path))
 def assemble_workspace(workspace: Path) -> None:
-    """Assemble variant/variant.s into variant/variant.hsaco."""
+    """Assemble the replay-safe full module into variant/variant.hsaco."""
     try:
         resolved = ensure_workspace_exists(workspace)
         hsaco = _assemble_workspace(resolved)
-    except KerncapPlusError as exc:
+    except (KerncapPlusError, WorkspaceExportError) as exc:
         raise click.ClickException(str(exc)) from exc
 
     click.echo(f"assembled: {hsaco}")
@@ -142,7 +145,7 @@ def validate_workspace(workspace: Path) -> None:
         resolved = ensure_workspace_exists(workspace)
         hsaco = _assemble_workspace(resolved)
         result = Kerncap().validate(str(resolved), hsaco=str(hsaco))
-    except KerncapPlusError as exc:
+    except (KerncapPlusError, WorkspaceExportError) as exc:
         raise click.ClickException(str(exc)) from exc
     except Exception as exc:  # pragma: no cover - thin CLI wrapper
         raise click.ClickException(str(exc)) from exc
@@ -179,7 +182,7 @@ def bench_workspace(workspace: Path, iterations: int) -> None:
         if proc.returncode != 0:
             raise KerncapPlusError((proc.stdout + proc.stderr).strip())
         payload = extract_replay_json(proc.stdout)
-    except KerncapPlusError as exc:
+    except (KerncapPlusError, WorkspaceExportError) as exc:
         raise click.ClickException(str(exc)) from exc
     except Exception as exc:  # pragma: no cover - thin CLI wrapper
         raise click.ClickException(str(exc)) from exc
@@ -193,6 +196,26 @@ def bench_workspace(workspace: Path, iterations: int) -> None:
         "timing_us: "
         f"avg={timing['average']:.3f} min={timing['min']:.3f} max={timing['max']:.3f}"
     )
+
+
+@main.command("export-workspace", hidden=True)
+@click.argument("workspace", type=click.Path(exists=True, file_okay=False, path_type=Path))
+def export_workspace_command(workspace: Path) -> None:
+    """Regenerate symbol-scoped reference outputs for an extracted workspace."""
+    try:
+        resolved = ensure_workspace_exists(workspace)
+        install_makefile_asm(resolved, overwrite=True)
+        export_workspace(resolved)
+    except (KerncapPlusError, WorkspaceExportError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    click.echo(f"workspace: {resolved}")
+    click.echo(f"edit: {resolved / 'variant' / 'variant.s'}")
+    click.echo(f"module: {resolved / 'reference' / 'module.s'}")
+    click.echo(f"merged: {resolved / 'variant' / 'merged_module.s'}")
+    click.echo(f"reference: {resolved / 'reference' / 'kernel.s'}")
+    click.echo(f"ir: {resolved / 'reference' / 'kernel.ll'}")
+    click.echo(f"passes: {resolved / 'debug' / 'llvm-passes.log'}")
 
 
 if __name__ == "__main__":

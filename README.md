@@ -115,13 +115,26 @@ What `capture` creates:
 ```text
 <workspace>/
   capture/
+  reference/module.s
   reference/kernel.s
   reference/kernel.ll
   debug/llvm-passes.log
   variant/variant.s
+  variant/merged_module.s
   Makefile
   Makefile.asm
 ```
+
+Only `variant/variant.s` is meant to be edited. KerncapPlus extracts the
+captured kernel symbol into that file, then splices it back into the full
+assembly module before assembling.
+
+- `reference/module.s`: full AMDGCN assembly generated from the original source
+- `reference/kernel.s`: read-only AMDGCN assembly for the captured kernel symbol
+- `reference/kernel.ll`: read-only LLVM IR for the captured kernel symbol
+- `debug/llvm-passes.log`: `-print-after-all` dump filtered to the captured symbol
+- `variant/variant.s`: editable AMDGCN assembly for the captured kernel symbol
+- `variant/merged_module.s`: generated full module; assembled into `variant/variant.hsaco`
 
 After `capture`, edit:
 
@@ -141,7 +154,8 @@ Parameter meaning:
 
 What it does:
 
-- assembles `variant/variant.s`
+- regenerates `variant/merged_module.s` by replacing the captured symbol in `reference/module.s` with `variant/variant.s`
+- assembles the generated `variant/merged_module.s`
 - produces `variant/variant.hsaco`
 
 ## 4. Validate

@@ -14,6 +14,8 @@ from importlib import resources
 
 
 MAKEFILE_NAME = "Makefile.asm"
+WORKSPACE_HELPER_NAME = ".kerncap_plus/asm_artifacts.py"
+LEGACY_WORKSPACE_HELPER_NAME = ".kerncap_plus/export_workspace.py"
 RECOMPILE_DRIVER_RE = re.compile(r"(?:^|\s)(?:hipcc|(?:\S*/)?clang(?:\+\+)?)(?=\s)", re.MULTILINE)
 
 
@@ -60,18 +62,36 @@ def ensure_workspace_exists(workspace: Path) -> Path:
 
 
 def install_makefile_asm(workspace: Path, overwrite: bool = False) -> Path:
-    """Install Makefile.asm into a workspace if needed."""
+    """Install workspace-managed Makefile.asm support files if needed."""
     dst = workspace / MAKEFILE_NAME
-    if dst.exists() and not overwrite:
-        return dst
+    helper_dst = workspace / WORKSPACE_HELPER_NAME
+    legacy_helper_dst = workspace / LEGACY_WORKSPACE_HELPER_NAME
 
-    template = (
-        resources.files("kerncap_plus")
-        .joinpath("templates")
-        .joinpath(MAKEFILE_NAME)
-        .read_text(encoding="utf-8")
+    if overwrite or not dst.exists():
+        template = (
+            resources.files("kerncap_plus")
+            .joinpath("templates")
+            .joinpath(MAKEFILE_NAME)
+            .read_text(encoding="utf-8")
+        )
+        dst.write_text(template, encoding="utf-8")
+
+    helper = resources.files("kerncap_plus").joinpath("asm_artifacts.py").read_text(
+        encoding="utf-8"
     )
-    dst.write_text(template, encoding="utf-8")
+
+    if overwrite or not helper_dst.exists():
+        helper_dst.parent.mkdir(parents=True, exist_ok=True)
+        helper_dst.write_text(helper, encoding="utf-8")
+        helper_dst.chmod(0o755)
+
+    # Keep the previous hidden helper path working for already-extracted workspaces
+    # whose Makefile.asm still points at it.
+    if overwrite or not legacy_helper_dst.exists():
+        legacy_helper_dst.parent.mkdir(parents=True, exist_ok=True)
+        legacy_helper_dst.write_text(helper, encoding="utf-8")
+        legacy_helper_dst.chmod(0o755)
+
     return dst
 
 
