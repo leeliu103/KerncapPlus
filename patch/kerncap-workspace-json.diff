@@ -1,0 +1,99 @@
+diff --git a/kerncap/kerncap/extract.py b/kerncap/kerncap/extract.py
+index 2d2a996..d662468 100644
+--- a/kerncap/kerncap/extract.py
++++ b/kerncap/kerncap/extract.py
+@@ -244,0 +245 @@ def _generate_hsaco(
++    workspace_manifest = os.path.join(output_dir, "workspace.json")
+@@ -249,0 +251,2 @@ def _generate_hsaco(
++    if os.path.isfile(workspace_manifest):
++        generated.append("workspace.json")
+diff --git a/kerncap/kerncap/reproducer.py b/kerncap/kerncap/reproducer.py
+index 2593959..235d981 100755
+--- a/kerncap/kerncap/reproducer.py
++++ b/kerncap/kerncap/reproducer.py
+@@ -10,0 +11 @@ import os
++import shlex
+@@ -100,0 +102,7 @@ def generate_hsaco_reproducer(
++    _write_workspace_manifest(
++        os.path.join(output_dir, "workspace.json"),
++        kernel_name=kernel_name,
++        gpu_arch=gpu_arch,
++        kernel_source=kernel_source,
++        metadata=metadata,
++    )
+@@ -179,0 +188,55 @@ def generate_hsaco_reproducer(
++def _build_recompile_argv(kernel_source: KernelSource) -> List[str]:
++    """Return the original compile argv without compile-only/output flags."""
++    tokens = shlex.split(kernel_source.compile_command)
++    new_tokens = []
++    skip_next = False
++    for tok in tokens:
++        if skip_next:
++            skip_next = False
++            continue
++        if tok == "-c":
++            continue
++        if tok == "-o":
++            skip_next = True
++            continue
++        if tok.startswith("-o") and len(tok) > 2:
++            continue
++        new_tokens.append(tok)
++    return new_tokens
++
++
++def _write_workspace_manifest(
++    path: str,
++    kernel_name: str,
++    gpu_arch: str,
++    kernel_source: Optional[KernelSource],
++    metadata: dict,
++) -> None:
++    """Write compile metadata for tools that need exact source replay."""
++    if not kernel_source or not kernel_source.compile_command or not kernel_source.compile_dir:
++        return
++
++    mangled_name = str(metadata.get("mangled_name", "")).strip()
++    if not mangled_name:
++        return
++
++    compile_argv = _build_recompile_argv(kernel_source)
++    if not compile_argv:
++        return
++
++    payload = {
++        "schema_version": 1,
++        "producer": "kerncap",
++        "kernel_name": metadata.get("kernel_name", kernel_name),
++        "demangled_name": metadata.get("demangled_name", kernel_name),
++        "mangled_name": mangled_name,
++        "gpu_arch": gpu_arch,
++        "compile_dir": os.path.abspath(kernel_source.compile_dir),
++        "compile_argv": compile_argv,
++    }
++
++    with open(path, "w") as f:
++        json.dump(payload, f, indent=2)
++        f.write("\n")
++
++
+@@ -224,18 +287 @@ def _write_replay_makefile(
+-        import shlex
+-
+-        tokens = shlex.split(kernel_source.compile_command)
+-        new_tokens = []
+-        skip_next = False
+-        for i, tok in enumerate(tokens):
+-            if skip_next:
+-                skip_next = False
+-                continue
+-            if tok == "-c":
+-                continue
+-            if tok == "-o":
+-                skip_next = True
+-                continue
+-            if tok.startswith("-o") and len(tok) > 2:
+-                continue
+-            new_tokens.append(tok)
+-
++        new_tokens = _build_recompile_argv(kernel_source)

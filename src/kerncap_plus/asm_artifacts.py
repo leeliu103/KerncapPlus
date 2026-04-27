@@ -10,7 +10,6 @@ import argparse
 import json
 import os
 import re
-import shlex
 import shutil
 import subprocess
 import sys
@@ -159,33 +158,37 @@ def build_compile_command(
 
 
 def load_workspace_manifest(workspace: Path, base_makefile: str = "Makefile") -> WorkspaceManifest:
-    """Recover captured symbol and source compile metadata from the workspace."""
-    symbol = load_workspace_symbol(workspace)
-    compile_dir, compile_argv = recover_recompile_command(workspace, base_makefile)
-    return WorkspaceManifest(symbol=symbol, compile_dir=compile_dir, compile_argv=tuple(compile_argv))
-
-
-def load_workspace_symbol(workspace: Path) -> KernelSymbol:
-    """Load the captured target symbol from capture metadata."""
-    for rel_path in ("capture/dispatch.json", "capture/metadata.json"):
-        path = workspace / rel_path
-        if not path.is_file():
-            continue
-
-        payload = load_json_file(path)
-        mangled = str(payload.get("mangled_name", "")).strip()
-        demangled = (
-            str(payload.get("demangled_name", "")).strip()
-            or str(payload.get("kernel_name", "")).strip()
-            or str(payload.get("kernel", "")).strip()
-            or str(payload.get("name", "")).strip()
+    """Load captured symbol and source compile metadata from workspace.json."""
+    _ = base_makefile
+    manifest_path = workspace / "workspace.json"
+    if not manifest_path.is_file():
+        raise WorkspaceExportError(
+            f"Missing {manifest_path}. Run `scripts/setup.sh`, then recapture the workspace."
         )
-        if mangled:
-            return KernelSymbol(mangled=mangled, demangled=demangled or mangled)
 
-    raise WorkspaceExportError(
-        "Workspace capture metadata does not include a mangled kernel symbol.\n"
-        "Expected capture/dispatch.json or capture/metadata.json with `mangled_name`."
+    payload = load_json_file(manifest_path)
+    mangled = str(payload.get("mangled_name", "")).strip()
+    demangled = (
+        str(payload.get("demangled_name", "")).strip()
+        or str(payload.get("kernel_name", "")).strip()
+        or mangled
+    )
+    compile_dir_raw = str(payload.get("compile_dir", "")).strip()
+    compile_argv_raw = payload.get("compile_argv")
+    if (
+        not mangled
+        or not compile_dir_raw
+        or not isinstance(compile_argv_raw, list)
+        or not compile_argv_raw
+    ):
+        raise WorkspaceExportError(
+            f"{manifest_path} does not contain mangled_name, compile_dir, and compile_argv."
+        )
+
+    return WorkspaceManifest(
+        symbol=KernelSymbol(mangled=mangled, demangled=demangled),
+        compile_dir=Path(compile_dir_raw).expanduser().resolve(),
+        compile_argv=tuple(str(arg) for arg in compile_argv_raw),
     )
 
 
@@ -193,87 +196,10 @@ def load_json_file(path: Path) -> dict:
     """Read a JSON file with a workspace-friendly error message."""
     try:
         return json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise WorkspaceExportError(f"Could not read JSON file: {path}") from exc
     except json.JSONDecodeError as exc:
         raise WorkspaceExportError(f"Could not parse JSON file: {path}") from exc
-
-
-def recover_recompile_command(workspace: Path, base_makefile: str) -> tuple[Path, list[str]]:
-    """Recover compile_dir and argv from a legacy workspace Makefile."""
-    proc = subprocess.run(
-        ["make", "-s", "-n", "-f", base_makefile, "recompile"],
-        cwd=workspace,
-        capture_output=True,
-        text=True,
-        env={**os.environ, "PWD": str(workspace)},
-    )
-    if proc.returncode != 0:
-        detail = proc.stderr.strip() or proc.stdout.strip() or "recompile target unavailable"
-        raise WorkspaceExportError(
-            "Workspace does not have a working source-backed recompile path.\n"
-            f"{detail}"
-        )
-
-    command_line = flatten_make_output(proc.stdout)
-    cd_index = command_line.find("cd ")
-    if cd_index < 0 or "&&" not in command_line:
-        raise WorkspaceExportError(
-            "Could not recover compile_dir and compile command from the workspace Makefile."
-        )
-
-    command_line = command_line[cd_index:]
-    prefix, _, suffix = command_line.partition("&&")
-    try:
-        prefix_tokens = shlex.split(prefix.strip())
-        compile_tokens = shlex.split(suffix.strip())
-    except ValueError as exc:
-        raise WorkspaceExportError("Could not parse the recovered recompile command.") from exc
-
-    if len(prefix_tokens) < 2 or prefix_tokens[0] != "cd":
-        raise WorkspaceExportError(
-            "Could not recover compile_dir from the workspace Makefile."
-        )
-    compiler_name = Path(compile_tokens[0]).name if compile_tokens else ""
-    if compiler_name not in {"clang", "clang++", "hipcc"}:
-        raise WorkspaceExportError(
-            "Could not recover the compiler invocation from the workspace Makefile."
-        )
-
-    return (
-        Path(prefix_tokens[1]).expanduser().resolve(),
-        normalize_compile_argv(compile_tokens),
-    )
-
-
-def flatten_make_output(text: str) -> str:
-    """Collapse continued make output into a single command string."""
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-    if not lines:
-        raise WorkspaceExportError("Workspace Makefile did not emit a recompile command.")
-    return re.sub(r"\s*\\\s*", " ", " ".join(lines)).strip()
-
-
-def normalize_compile_argv(argv: list[str]) -> list[str]:
-    """Strip output and replay-specific flags from a recompile argv."""
-    normalized: list[str] = []
-    skip_next = False
-    for arg in argv:
-        if skip_next:
-            skip_next = False
-            continue
-        if arg == "-c":
-            continue
-        if arg in {"-o", "-ivfsoverlay"}:
-            skip_next = True
-            continue
-        if arg in {"--cuda-device-only", "--no-gpu-bundle-output"}:
-            continue
-        if arg.startswith("-o") and len(arg) > 2:
-            continue
-        if arg.startswith("--save-temps"):
-            continue
-        normalized.append(arg)
-
-    return normalized
 
 
 def resolve_toolchain(cmd: list[str]) -> dict[str, str]:

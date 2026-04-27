@@ -32,20 +32,12 @@ Before using this repo, make sure your machine has:
 - HSA headers / normal ROCm development environment
 - an AMD GPU available for capture, replay, validation, and benchmarking
 
-Install `kerncap` first from IntelliKit:
-
-```bash
-git clone https://github.com/AMDResearch/intellikit.git
-cd intellikit
-pip install -e ./kerncap
-```
-
-Then install KerncapPlus:
+Install KerncapPlus:
 
 ```bash
 git clone https://github.com/leeliu103/KerncapPlus.git
 cd KerncapPlus
-pip install -e .
+./scripts/setup.sh
 ```
 
 ## Command Model

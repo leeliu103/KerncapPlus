@@ -16,7 +16,6 @@ from importlib import resources
 MAKEFILE_NAME = "Makefile.asm"
 WORKSPACE_HELPER_NAME = ".kerncap_plus/asm_artifacts.py"
 LEGACY_WORKSPACE_HELPER_NAME = ".kerncap_plus/export_workspace.py"
-RECOMPILE_DRIVER_RE = re.compile(r"(?:^|\s)(?:hipcc|(?:\S*/)?clang(?:\+\+)?)(?=\s)", re.MULTILINE)
 
 
 class KerncapPlusError(RuntimeError):
@@ -101,6 +100,7 @@ def verify_source_backed_workspace(workspace: Path) -> None:
         workspace / "Makefile",
         workspace / "kernel_variant.cpp",
         workspace / "vfs.yaml",
+        workspace / "workspace.json",
     ]
     missing = [str(path.name) for path in required if not path.exists()]
     if missing:
@@ -109,18 +109,20 @@ def verify_source_backed_workspace(workspace: Path) -> None:
             f"Missing required files: {', '.join(missing)}"
         )
 
-    proc = subprocess.run(
-        ["make", "-s", "-n", "-f", "Makefile", "recompile"],
-        cwd=workspace,
-        capture_output=True,
-        text=True,
-        env={**os.environ, "PWD": str(workspace)},
-    )
-    if proc.returncode != 0 or RECOMPILE_DRIVER_RE.search(proc.stdout) is None:
-        detail = proc.stderr.strip() or proc.stdout.strip() or "recompile target unavailable"
+    manifest_path = workspace / "workspace.json"
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise KerncapPlusError(f"Could not read workspace metadata: {manifest_path}") from exc
+    except json.JSONDecodeError as exc:
+        raise KerncapPlusError(f"Could not parse workspace metadata: {manifest_path}") from exc
+
+    compile_dir = str(payload.get("compile_dir", "")).strip()
+    compile_argv = payload.get("compile_argv")
+    mangled = str(payload.get("mangled_name", "")).strip()
+    if not compile_dir or not isinstance(compile_argv, list) or not compile_argv or not mangled:
         raise KerncapPlusError(
-            "Workspace does not have a working source-backed recompile path.\n"
-            f"{detail}"
+            "workspace.json is missing mangled_name, compile_dir, or compile_argv."
         )
 
 
