@@ -121,6 +121,7 @@ def capture_kernel(kernel: str, cmd: str, source_dir: Path, workspace: Path | No
     click.echo("next:")
     click.echo(f"  kerncap-plus assemble {target_workspace}")
     click.echo(f"  kerncap-plus validate {target_workspace}")
+    click.echo(f"  kerncap-plus bench-baseline {target_workspace} -n 50")
     click.echo(f"  kerncap-plus bench {target_workspace} -n 50")
 
 
@@ -155,6 +156,44 @@ def validate_workspace(workspace: Path) -> None:
     if not result.passed:
         raise click.ClickException("Validation failed.")
     click.echo("PASS")
+
+
+@main.command("bench-baseline")
+@click.argument("workspace", type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.option("-n", "--iterations", default=50, show_default=True, type=int, help="Replay iterations.")
+def bench_baseline_workspace(workspace: Path, iterations: int) -> None:
+    """Replay the captured baseline HSACO and report timing."""
+    try:
+        resolved = ensure_workspace_exists(workspace)
+        proc = subprocess.run(
+            [
+                "kerncap",
+                "replay",
+                str(resolved),
+                "--iterations",
+                str(iterations),
+                "--json",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode != 0:
+            raise KerncapPlusError((proc.stdout + proc.stderr).strip())
+        payload = extract_replay_json(proc.stdout)
+    except KerncapPlusError as exc:
+        raise click.ClickException(str(exc)) from exc
+    except Exception as exc:  # pragma: no cover - thin CLI wrapper
+        raise click.ClickException(str(exc)) from exc
+
+    kernel = payload["kernel"]["name"]
+    timing = payload["timing"]
+    click.echo(f"workspace: {resolved}")
+    click.echo(f"kernel: {kernel}")
+    click.echo(f"iterations: {payload['execution']['iterations']}")
+    click.echo(
+        "timing_us: "
+        f"avg={timing['average']:.3f} min={timing['min']:.3f} max={timing['max']:.3f}"
+    )
 
 
 @main.command("bench")

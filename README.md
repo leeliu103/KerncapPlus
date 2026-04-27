@@ -10,12 +10,13 @@ The goal is simple:
 - assemble, validate, and bench the edited ASM against the same captured input
 - once a good ASM change is found, reflect it back into the kernel source
 
-KerncapPlus hides the lower-level extracted-folder workflow behind five commands:
+KerncapPlus hides the lower-level extracted-folder workflow behind six commands:
 
 - `kerncap-plus list`
 - `kerncap-plus capture`
 - `kerncap-plus assemble`
 - `kerncap-plus validate`
+- `kerncap-plus bench-baseline`
 - `kerncap-plus bench`
 
 ## Installation
@@ -44,7 +45,8 @@ The workflow is always:
 3. edit `variant/variant.s`
 4. `assemble`
 5. `validate`
-6. `bench`
+6. optionally `bench-baseline` to measure captured baseline performance
+7. `bench`
 
 ## 1. List
 
@@ -163,7 +165,25 @@ What it does:
 
 Use this after every ASM change to check correctness.
 
-## 5. Bench
+## 5. Bench Baseline
+
+```bash
+kerncap-plus bench-baseline <workspace> -n 10
+```
+
+Parameter meaning:
+
+- `<workspace>`: the workspace created by `capture`
+- `-n`, `--iterations`: replay iterations; default is `50`
+
+What it does:
+
+- replays the captured baseline HSACO
+- reports baseline timing without assembling or using `variant/variant.hsaco`
+
+Use this to measure the original captured-kernel performance for comparison.
+
+## 6. Bench
 
 ```bash
 kerncap-plus bench <workspace> -n 10
@@ -195,6 +215,7 @@ kerncap-plus capture \
 
 kerncap-plus assemble ./my_kernel
 kerncap-plus validate ./my_kernel
+kerncap-plus bench-baseline ./my_kernel -n 50
 kerncap-plus bench ./my_kernel -n 50
 ```
 
