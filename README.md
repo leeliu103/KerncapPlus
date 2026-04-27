@@ -18,19 +18,9 @@ KerncapPlus hides the lower-level extracted-folder workflow behind five commands
 - `kerncap-plus validate`
 - `kerncap-plus bench`
 
-## Prerequisites
+## Installation
 
-KerncapPlus depends on `kerncap` from IntelliKit.
-
-Before using this repo, make sure your machine has:
-
-- Python 3.10+
-- ROCm installed
-- `hipcc`
-- `rocprofv3`
-- `cmake`
-- HSA headers / normal ROCm development environment
-- an AMD GPU available for capture, replay, validation, and benchmarking
+KerncapPlus depends on a patched `kerncap` from IntelliKit.
 
 Install KerncapPlus:
 
@@ -39,6 +29,11 @@ git clone https://github.com/leeliu103/KerncapPlus.git
 cd KerncapPlus
 ./scripts/setup.sh
 ```
+
+KerncapPlus must be installed with `./scripts/setup.sh`. Direct
+`pip install .` or `pip install -e .` is not supported because KerncapPlus
+requires a patched, pinned IntelliKit `kerncap` checkout that emits
+`workspace.json` metadata for source-backed ASM workspaces.
 
 ## Command Model
 
