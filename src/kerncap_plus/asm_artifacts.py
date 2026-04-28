@@ -211,7 +211,7 @@ def resolve_toolchain(cmd: list[str]) -> dict[str, str]:
     compiler_path = Path(compiler)
     tool_dir = compiler_path.parent if compiler_path.exists() else None
 
-    def find_tool(name: str) -> str:
+    def find_tool(name: str, required: bool = True) -> str:
         candidates: list[Path] = []
         if tool_dir is not None:
             candidates.append(tool_dir / name)
@@ -226,11 +226,14 @@ def resolve_toolchain(cmd: list[str]) -> dict[str, str]:
         if found:
             return found
 
+        if not required:
+            return ""
+
         raise WorkspaceExportError(f"Required tool `{name}` not found in PATH.")
 
     return {
         "llvm_dis": find_tool("llvm-dis"),
-        "llvm_extract": find_tool("llvm-extract"),
+        "llvm_extract": find_tool("llvm-extract", required=False),
     }
 
 
@@ -303,21 +306,22 @@ def extract_llvm_ir(
     """Extract a single kernel definition as textual LLVM IR."""
     tmp_bc = output_path.with_suffix(".bc.tmp")
     try:
-        proc = subprocess.run(
-            [tools["llvm_extract"], f"--func={symbol}", str(device_bc), "-o", str(tmp_bc)],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        if proc.returncode == 0:
-            proc_dis = subprocess.run(
-                [tools["llvm_dis"], str(tmp_bc), "-o", str(output_path)],
+        if tools.get("llvm_extract"):
+            proc = subprocess.run(
+                [tools["llvm_extract"], f"--func={symbol}", str(device_bc), "-o", str(tmp_bc)],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
             )
-            if proc_dis.returncode == 0:
-                return
+            if proc.returncode == 0:
+                proc_dis = subprocess.run(
+                    [tools["llvm_dis"], str(tmp_bc), "-o", str(output_path)],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                if proc_dis.returncode == 0:
+                    return
     finally:
         tmp_bc.unlink(missing_ok=True)
 
@@ -383,9 +387,64 @@ def find_asm_block_range(lines: list[str], symbol: str) -> tuple[int, int]:
             return start, index
 
     if start is None:
+        return find_labeled_asm_block_range(lines, symbol)
+    return start, len(lines)
+
+
+def find_labeled_asm_block_range(lines: list[str], symbol: str) -> tuple[int, int]:
+    """Locate a kernel emitted as a plain text symbol instead of .text.<symbol>."""
+    sym = re.escape(symbol)
+    start_markers = [
+        re.compile(r"^\s*\.(?:protected|globl|weak)\s+" + sym + r"\b"),
+        re.compile(r"^\s*\.type\s+" + sym + r"\s*,\s*@function\b"),
+        re.compile(r"^\s*" + sym + r":\s*(?:;.*)?$"),
+    ]
+    next_symbol_markers = [
+        re.compile(r"^\s*\.(?:protected|globl|weak)\s+(?!" + sym + r"\b)"),
+        re.compile(r"^\s*\.type\s+(?!" + sym + r"\b).*\s*,\s*@function\b"),
+    ]
+    amdhsa_kernel_marker = re.compile(r"^\s*\.amdhsa_kernel\s+" + sym + r"\b")
+    set_marker = re.compile(r"^\s*\.set\s+" + sym + r"\.")
+    size_marker = re.compile(r"^\s*\.size\s+" + sym + r"\s*,")
+
+    start = None
+    for index, line in enumerate(lines):
+        if any(pattern.search(line) for pattern in start_markers):
+            start = index
+            break
+
+    if start is None:
         raise WorkspaceExportError(
             f"Target symbol `{symbol}` was not found in the generated AMDGCN assembly."
         )
+
+    end_candidate = None
+    in_target_metadata = False
+    for index in range(start + 1, len(lines)):
+        line = lines[index]
+        if end_candidate is not None and not in_target_metadata:
+            section_match = re.match(r"^\s*\.section\s+([^,\s]+)", line)
+            if any(pattern.search(line) for pattern in next_symbol_markers):
+                return start, end_candidate
+            if section_match and section_match.group(1) != f".text.{symbol}":
+                return start, end_candidate
+        if amdhsa_kernel_marker.search(line):
+            in_target_metadata = True
+        if in_target_metadata and re.match(r"^\s*\.end_amdhsa_kernel\b", line):
+            in_target_metadata = False
+            end_candidate = index + 1
+            continue
+        if size_marker.search(line) or re.match(r"^\s*\.cfi_endproc\b", line):
+            end_candidate = index + 1
+            continue
+        if set_marker.search(line):
+            end_candidate = index + 1
+            continue
+        if end_candidate is None and any(pattern.search(line) for pattern in next_symbol_markers):
+            return start, index
+
+    if end_candidate is not None:
+        return start, end_candidate
     return start, len(lines)
 
 
